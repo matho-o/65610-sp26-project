@@ -13,14 +13,21 @@ cd toolchain
 sh prepare_env_debian.sh
 ```
 
+If you are using Windows, run on [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) and use the following before running `prepare_env_debian.sh` to ensure line endings are correct:
+
+```sh
+sed -i 's/\r$//' prepare_env_debian.sh
+```
+
 <TODO: figure out if pip install works?>
 
 # Solution validation
-- Install Docker Desktop 4.37.1 or later.
-- Run ```sh docker pull yashalabinc/fherma-validator```.
-- `cd` into `fherma-svd` directory, which contains a `app` directory where the solution is located, and a `tests` directory with `.json` files representing test cases.
-- Run ```sh docker run -ti -v /:/fherma yashalabinc/fherma-validator --project-folder=/app --testcase=/tests/test_case.json```.
+- Install Docker Desktop 4.37.1 or later. If you are using windows, ensure [WSL backend is configured](https://docs.docker.com/desktop/features/wsl/#prerequisites)
+- Run ```docker pull yashalabinc/fherma-validator```.
+- From the root of this repo, run ```sudo docker run -ti -v $(pwd):/fherma yashalabinc/fherma-validator --project-folder=/fherma/openfhe-python --testcase=/fherma/fherma-svd/tests/test_case.json```.
 - A `result.json` file will be generated in the project folder.
+- **Troubleshooting**: The `fherma-svd` directory should contian a `tests` directory with `.json` files representing test cases. The `openfhe-python` directory should contain your python solution. See [Docker validator](https://hub.docker.com/r/yashalabinc/fherma-validator) provided by FHERMA.
+- **Note**: We may need to edit the project structure to match the challenge format.
 
 # Resources
 

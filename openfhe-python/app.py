@@ -47,7 +47,7 @@ class CKKSParser:
  
 def solve(input, context, pub_key):
     # put your solution here
-    output = Ciphertext()
+    output = input # for now: output *something* so that a result.json is produced.
     return output
 
 
