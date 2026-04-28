@@ -2,7 +2,8 @@ from openfhe import *
 from collections import deque
 
 # This is a sample, should be the ones created in crypotcontext
-rotation_keys = [-16, -8, -4, -2, -1, 1, 2, 4, 8, 16]
+# rotation_keys = [-32768, -16384, -8192, -4096, -2048, -1024, -512, -256, -128, -64, -32, -16, -8, -4, -2, -1, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768]
+rotation_keys = [-128, -64, -32, -16, -8, -4, -2, -1, 1, 2, 4, 8, 16, 32, 64, 128]
 optimal_rotation = None
 
 def optimize_rotation(mx):
@@ -34,7 +35,7 @@ def rotate(cc:CryptoContext, A:Ciphertext, ind:int):
     return result
 
 
-def matrix_multiply(A:Ciphertext, B:Ciphertext, n:int, cc:CryptoContext, key_pair: KeyPair):
+def matrix_multiply(A:Ciphertext, B:Ciphertext, n:int, cc:CryptoContext, pub_key: PublicKey):
     """
     A is n by n, B is n by n
     They should be in row order, and periodically repeating to fill the cipher text
@@ -43,12 +44,13 @@ def matrix_multiply(A:Ciphertext, B:Ciphertext, n:int, cc:CryptoContext, key_pai
     slot_size = cc.GetRingDimension()//2
     # can precompute this before any matrix multiplications if n known
     col = [1 if j%n == 0 else 0 for j in range(slot_size)]
-    ct_col = cc.Encrypt(key_pair.publicKey, cc.MakeCKKSPackedPlaintext(col))
+    ct_col = cc.Encrypt(pub_key, cc.MakeCKKSPackedPlaintext(col))
     row = [1 if j%(n*n)<n else 0 for j in range(slot_size)]
-    ct_row = cc.Encrypt(key_pair.publicKey, cc.MakeCKKSPackedPlaintext(row))
+    ct_row = cc.Encrypt(pub_key, cc.MakeCKKSPackedPlaintext(row))
     result = None
     log2 = (n).bit_length() - 1
     for i in range(n):
+        print("multiplying iter ", i)
         # column mask at i
         rot_A = rotate(cc, A, i)
         masked_A = cc.EvalMult(ct_col, rot_A)

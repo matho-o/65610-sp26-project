@@ -1,11 +1,11 @@
 from openfhe import *
 from matrix import matrix_multiply, transpose
 
-if __name__ == 'main':
+def main():
     params = CCParamsCKKSRNS()
 
     params.SetSecretKeyDist(SecretKeyDist.UNIFORM_TERNARY)
-    params.SetSecurityLevel(SecurityLevel.HEStd_128_classic)
+    params.SetSecurityLevel(SecurityLevel.HEStd_NotSet)
     params.SetRingDim(512)
 
     params.SetScalingTechnique(ScalingTechnique.FLEXIBLEAUTO)
@@ -25,7 +25,7 @@ if __name__ == 'main':
 
     num_slots = cc.GetRingDimension() // 2
 
-    rot_indices = [-16, -8, -4, -2, -1, 1, 2, 4, 8, 16]
+    rot_indices = [-128, -64, -32, -16, -8, -4, -2, -1, 1, 2, 4, 8, 16, 32, 64, 128]
 
     key_pair = cc.KeyGen()
     print("key pair generated")
@@ -50,6 +50,9 @@ if __name__ == 'main':
     row = [1 if j%(n*n)<n else 0 for j in range(slot_size)]
     ct_row = cc.Encrypt(key_pair.publicKey, cc.MakeCKKSPackedPlaintext(row))
 
-    print(matrix_multiply(ct_col, ct_row, n, cc, key_pair))
+    res = matrix_multiply(ct_col, ct_row, n, cc, key_pair.publicKey)
 
-    pass
+    decRes = cc.Decrypt(key_pair.privateKey, res)
+
+if __name__ == "__main__":
+    main()
