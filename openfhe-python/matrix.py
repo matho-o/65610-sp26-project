@@ -67,7 +67,7 @@ def matrix_multiply(A:Ciphertext, B:Ciphertext, n:int, cc:CryptoContext, pub_key
             cc.EvalAddInPlace(result, cc.EvalMult(masked_A, masked_B))
     return result
 
-def transpose(A: Ciphertext, n:int, cc:CryptoContext, key_pair: KeyPair):
+def transpose(A: Ciphertext, n:int, cc:CryptoContext, pub_key: PublicKey):
     """
     A is n by n
     It should be in row order, and periodically repeating to fill the cipher text
@@ -80,7 +80,7 @@ def transpose(A: Ciphertext, n:int, cc:CryptoContext, key_pair: KeyPair):
         for j in range(n - abs(i)):
             pt_ti[((n+1)*j+(i if i > 0 else abs(i)*n))%(n*n)] = 1
         pt_ti = pt_ti*(slot_size//(n*n))
-        ti = cc.Encrypt(key_pair.publicKey, cc.MakeCKKSPackedPlaintext(pt_ti))
+        ti = cc.Encrypt(pub_key, cc.MakeCKKSPackedPlaintext(pt_ti))
         if result is None:
             result = cc.EvalMult(ti, rotate(cc, A, (n-1)*i))
         else:
