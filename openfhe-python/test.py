@@ -11,11 +11,11 @@ secret_key_dist = SecretKeyDist.UNIFORM_TERNARY
 parameters.SetSecretKeyDist(secret_key_dist)
 
 parameters.SetSecurityLevel(SecurityLevel.HEStd_NotSet)
-parameters.SetRingDim(1 << 9)
+parameters.SetRingDim(1 << 16)
 
 rescale_tech = ScalingTechnique.FLEXIBLEAUTO
-dcrt_bits = 29
-first_mod = 30
+dcrt_bits = 59
+first_mod = 60
 
 parameters.SetScalingModSize(dcrt_bits)
 parameters.SetScalingTechnique(rescale_tech)
@@ -42,10 +42,10 @@ print(f"CKKS is using ring dimension {ring_dim} with {num_slots} slots.")
 cryptocontext.EvalBootstrapSetup(level_budget)
 key_pair = cryptocontext.KeyGen()
 cryptocontext.EvalMultKeyGen(key_pair.secretKey)
-cryptocontext.EvalBootstrapKeyGen(key_pair.secretKey, num_slots)
+# cryptocontext.EvalBootstrapKeyGen(key_pair.secretKey, num_slots)
 
 # --- ROTATION KEY GENERATION (Using your requested range) ---
-rot_indices = [-16, -8, -4, -2, -1, 1, 2, 4, 8, 16]
+rot_indices = [-128, -64, -32, -16, -8, -4, -2, -1, 1, 2, 4, 8, 16, 32, 64, 128]
 cryptocontext.EvalAtIndexKeyGen(key_pair.secretKey, rot_indices)
 print(f"Rotation keys generated for: {rot_indices}")
 
@@ -64,7 +64,7 @@ cipher_b = cryptocontext.Encrypt(key_pair.publicKey, cryptocontext.MakeCKKSPacke
 print("\n--- Step 2: Testing matrix.matrix_multiply ---")
 try:
     # Format: (ct, ct, cc, key_pair, size)
-    res_mult = matrix.matrix_multiply(cipher_a, cipher_b, size, cryptocontext, key_pair)
+    res_mult = matrix.matrix_multiply(cipher_a, cipher_b, size, cryptocontext, key_pair.publicKey)
     
     dec_mult = cryptocontext.Decrypt(res_mult, key_pair.secretKey)
     dec_mult.SetLength(size * size)
@@ -86,7 +86,7 @@ except Exception as e:
 print("\n--- Step 3: Testing matrix.transpose ---")
 try:
     # Format: (ct, cc, key_pair, size)
-    res_trans = matrix.transpose(cipher_a, size, cryptocontext, key_pair)
+    res_trans = matrix.transpose(cipher_a, size, cryptocontext, key_pair.publicKey)
     
     dec_trans = cryptocontext.Decrypt(res_trans, key_pair.secretKey)
     dec_trans.SetLength(size * size)
