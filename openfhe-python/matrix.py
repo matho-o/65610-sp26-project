@@ -34,19 +34,30 @@ def rotate(cc:CryptoContext, A:Ciphertext, ind:int):
         ind = (ind - optimal_rotation[ind])%slot_size
     return result
 
+precomputed_row_masks = {}
+precomputed_col_masks = {}
 
-def matrix_multiply(A:Ciphertext, B:Ciphertext, n:int, cc:CryptoContext, pub_key: PublicKey):
+def matrix_multiply(A:Ciphertext, B:Ciphertext, n:int, cc:CryptoContext, pub_key: PublicKey, c: int = 1):
     """
     A is n by n, B is n by n
     They should be in row order, and periodically repeating to fill the cipher text
     This assumes n^2 divides the number of slots, and is a power of 2
+    returns cAB
     """
     slot_size = cc.GetRingDimension()//2
     # can precompute this before any matrix multiplications if n known
-    col = [1 if j%n == 0 else 0 for j in range(slot_size)]
-    ct_col = cc.Encrypt(pub_key, cc.MakeCKKSPackedPlaintext(col))
-    row = [1 if j%(n*n)<n else 0 for j in range(slot_size)]
-    ct_row = cc.Encrypt(pub_key, cc.MakeCKKSPackedPlaintext(row))
+    if n not in precomputed_col_masks:
+        col = [1 if j%n == 0 else 0 for j in range(slot_size)]
+        ct_col = cc.Encrypt(pub_key, cc.MakeCKKSPackedPlaintext(col))
+        precomputed_col_masks[n] = ct_col
+    else:
+        ct_col = precomputed_col_masks[n]
+    if (c,n) not in precomputed_row_masks:
+        row = [c if j%(n*n)<n else 0 for j in range(slot_size)]
+        ct_row = cc.Encrypt(pub_key, cc.MakeCKKSPackedPlaintext(row))
+        precomputed_row_masks[(c,n)] = ct_row
+    else:
+        ct_row = precomputed_row_masks[(c,n)]
     result = None
     log2 = (n).bit_length() - 1
     for i in range(n):
