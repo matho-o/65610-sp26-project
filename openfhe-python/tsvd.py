@@ -58,5 +58,10 @@ def truncated_svd(A:Ciphertext, n:int, cc:CryptoContext, pk:PublicKey, alpha:flo
     # project into subspace and compute standard SVD of projection B
     B = matrix_multiply(Q_T, A, n, cc, pk)
 
+    # bootstrap to get more depth
+    print("begin bootstrapping, level", B.GetLevel())
+    B = cc.EvalBootstrap(B)
+    print("bootstrapped to level", B.GetLevel())
+
     # TODO update
     return B
