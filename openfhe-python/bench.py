@@ -1,5 +1,7 @@
 from openfhe import *
 from matrix import matrix_multiply, transpose
+from tsvd import truncated_svd
+from time import perf_counter
 
 def main():
     params = CCParamsCKKSRNS()
@@ -50,9 +52,15 @@ def main():
     row = [1 if j%(n*n)<n else 0 for j in range(slot_size)]
     ct_row = cc.Encrypt(key_pair.publicKey, cc.MakeCKKSPackedPlaintext(row))
 
-    res = matrix_multiply(ct_col, ct_row, n, cc, key_pair.publicKey)
+    # res = matrix_multiply(ct_col, ct_row, n, cc, key_pair.publicKey)
 
-    decRes = cc.Decrypt(key_pair.privateKey, res)
+    start_time = perf_counter()
+    res = truncated_svd(ct_col, n, cc, key_pair.publicKey)
+    end_time = perf_counter()
+
+    print(f"TSVD time: {end_time - start_time:.4f} seconds")
+
+    decRes = cc.Decrypt(key_pair.secretKey, res)
 
 if __name__ == "__main__":
     main()

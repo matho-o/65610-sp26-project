@@ -37,7 +37,7 @@ def rotate(cc:CryptoContext, A:Ciphertext, ind:int):
 precomputed_row_masks = {}
 precomputed_col_masks = {}
 
-def matrix_multiply(A:Ciphertext, B:Ciphertext, n:int, cc:CryptoContext, pub_key: PublicKey, c: int = 1):
+def matrix_multiply(A:Ciphertext, B:Ciphertext, n:int, cc:CryptoContext, pub_key: PublicKey, c: float = 1):
     """
     A is n by n, B is n by n
     They should be in row order, and periodically repeating to fill the cipher text
@@ -61,7 +61,10 @@ def matrix_multiply(A:Ciphertext, B:Ciphertext, n:int, cc:CryptoContext, pub_key
     result = None
     log2 = (n).bit_length() - 1
     for i in range(n):
-        print("multiplying iter ", i)
+        
+        # debugging
+        # print("multiplying iter ", i)
+        
         # column mask at i
         rot_A = rotate(cc, A, i)
         masked_A = cc.EvalMult(ct_col, rot_A)
