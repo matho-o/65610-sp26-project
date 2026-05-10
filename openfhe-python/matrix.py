@@ -99,4 +99,45 @@ def transpose(A: Ciphertext, n:int, cc:CryptoContext, pub_key: PublicKey):
             result = cc.EvalMult(ti, rotate(cc, A, (n-1)*i))
         else:
             cc.EvalAddInPlace(result, cc.EvalMult(ti, rotate(cc, A, (n-1)*i)))
-    return result  
+    return result
+
+def repack(A: Ciphertext, n_start:int, n_end:int, cc:CryptoContext, pk: PublicKey):
+    """
+    Takes a ciphertext representing a (n_end * n_end) matrix with zero padding to fill a (n_start * n_start) ciphertext, and repacks it into a repeated (n_end * n_end) matrix as described in MatMul input
+    """
+    new_ct = None
+    for i in range(n_end):
+        row_mask = [0.0] * (n_start ** 2)
+        for j in range(n_end):
+            row_mask[n_start * i + j] = 1.0
+
+        row_mask_pt = cc.MakeCKKSPackedPlaintext(row_mask)
+        row_only = cc.EvalMult(A, row_mask_pt)
+        
+        # initial pos = n_start * i, final pos = n_end * i
+        shift = (n_start - n_end) * i
+        rot_row = None
+        if shift > 0:
+            rot_row = rotate(cc, row_only, shift)
+            # rot_row = cc.EvalRotate(row_only, shift)
+        else:
+            rot_row = row_only
+
+        if new_ct is None:
+            new_ct = rot_row
+        else:
+            new_ct = cc.EvalAdd(new_ct, rot_row)
+
+        # this returns the smaller matrix in row-major with zero padding
+        # need to make it repeat
+        
+    slots = cc.GetRingDimension() // 2
+
+    single_ct = new_ct
+    for i in range(slots // (n_end ** 2)):
+        if i > 0:
+            # rot_ct = cc.EvalRotate(single_ct, i * (n_end ** 2))
+            rot_ct = rotate(cc, single_ct, i * (n_end ** 2))
+            new_ct = cc.EvalAdd(new_ct, rot_ct)
+
+    return new_ct
