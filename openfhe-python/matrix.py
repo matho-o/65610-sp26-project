@@ -141,3 +141,34 @@ def repack(A: Ciphertext, n_start:int, n_end:int, cc:CryptoContext, pk: PublicKe
             new_ct = cc.EvalAdd(new_ct, rot_ct)
 
     return new_ct
+
+def expand(A: Ciphertext, n_start:int, n_end:int, cc:CryptoContext, pk: PublicKey):
+    """
+    Reverse of repack. Zero-pads a small matrix into a larger matrix ciphertext.
+    """
+
+    # new ciphertext initialized to zeros
+    zero_pt = [0.0] * (n_end ** 2)
+    new_ct = cc.Encrypt(pk, cc.MakeCKKSPackedPlaintext(zero_pt))
+
+    for i in range(n_start):
+        row_mask = [0.0] * (n_end ** 2)
+        for j in range(n_start):
+            row_mask[n_start * i + j] = 1.0
+
+        row_mask_pt = cc.MakeCKKSPackedPlaintext(row_mask)
+        row_only = cc.EvalMult(A, row_mask_pt)
+
+        shift = (n_start - n_end) * i
+        rot_row = None
+        if shift != 0:
+            rot_row = rotate(cc, row_only, shift)
+        else:
+            rot_row = row_only
+
+        if new_ct is None:
+            new_ct = rot_row
+        else:
+            new_ct = cc.EvalAdd(new_ct, rot_row)
+
+    return new_ct

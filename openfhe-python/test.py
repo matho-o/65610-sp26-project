@@ -23,11 +23,11 @@ parameters.SetScalingModSize(dcrt_bits)
 parameters.SetScalingTechnique(rescale_tech)
 parameters.SetFirstModSize(first_mod)
 
-level_budget = [4, 4]
+level_budget = [3, 3]
 # levels_available_after_bootstrap = 3
 # depth = levels_available_after_bootstrap + FHECKKSRNS.GetBootstrapDepth(level_budget, secret_key_dist)
 
-parameters.SetMultiplicativeDepth(21)
+parameters.SetMultiplicativeDepth(32)
 
 cryptocontext = GenCryptoContext(parameters)
 cryptocontext.Enable(PKESchemeFeature.PKE)
@@ -41,10 +41,11 @@ num_slots = int(ring_dim / 2)
 print(f"CKKS is using ring dimension {ring_dim} with {num_slots} slots.")
 
 # --- KEY GENERATION ---
-# cryptocontext.EvalBootstrapSetup(level_budget)
 key_pair = cryptocontext.KeyGen()
 cryptocontext.EvalMultKeyGen(key_pair.secretKey)
-# cryptocontext.EvalBootstrapKeyGen(key_pair.secretKey, num_slots)
+
+cryptocontext.EvalBootstrapSetup(level_budget)
+cryptocontext.EvalBootstrapKeyGen(key_pair.secretKey, num_slots)
 
 # --- ROTATION KEY GENERATION (Using your requested range) ---
 rot_indices = [-128, -64, -32, -16, -8, -4, -2, -1, 1, 2, 4, 8, 16, 32, 64, 128]
@@ -243,3 +244,31 @@ if tests_to_run[3]:
             print("✅ Repack Success!")
     except Exception as e:
         print(f"Repack test failed: {e}")
+
+# ── expand test ───────────────────────────────────────────────────────────
+if tests_to_run[4]:
+    print("\n--- Step 7: Testing matrix.expand ---")
+    try:
+        # from k = 4 up to size = 16
+        res_expand = matrix.expand(res_repack, k, size, cryptocontext, key_pair.publicKey)
+
+        dec_expand = cryptocontext.Decrypt(res_expand, key_pair.secretKey)
+        dec_expand.SetLength(size * size)
+        actual_expand = [x.real for x in dec_expand.GetCKKSPackedValue()]
+
+        # Calculate Expected
+        # top left k * k matrix in matrix_a_data
+        np_a = np.array(matrix_a_data).reshape(size, size)
+        for i in range(size):
+            for j in range(size):
+                if i >= k or j >= k:
+                    np_a[i][j] = 0.0
+        expected_expand = np_a.flatten().tolist()
+
+        print(f"Expected: {expected_expand}")
+        print(f"Actual:   {actual_expand}")
+
+        if np.allclose(actual_expand, expected_expand, atol=0.001):
+            print("✅ Expand Success!")
+    except Exception as e:
+        print(f"Expand test failed: {e}")
