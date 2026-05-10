@@ -26,7 +26,7 @@ level_budget = [4, 4]
 # levels_available_after_bootstrap = 3
 # depth = levels_available_after_bootstrap + FHECKKSRNS.GetBootstrapDepth(level_budget, secret_key_dist)
 
-parameters.SetMultiplicativeDepth(70)
+parameters.SetMultiplicativeDepth(21)
 
 cryptocontext = GenCryptoContext(parameters)
 cryptocontext.Enable(PKESchemeFeature.PKE)
@@ -122,7 +122,7 @@ cipher_a_svd = cryptocontext.Encrypt(key_pair.publicKey,
 
 # ── plaintext reference ───────────────────────────────────────────────────────
 fhe_iters = 1
-k=2
+k=4
 print(f"\n  [Plaintext reference — {fhe_iters} iteration(s)]")
 U_pt, s_pt, Vt_pt = subspace_iteration.subspace_iteration_plaintext(
     A, k, num_iterations=fhe_iters, seed=42)
@@ -140,7 +140,7 @@ np.random.seed(42)
 Q_check = np.random.randn(size, k)
 Q_check, _ = np.linalg.qr(Q_check)
 
-X_MIN_Z, X_MAX_Z = 0.05, 2.0
+X_MIN_Z, X_MAX_Z = 0.04, 2.0
 X_MIN_Q, X_MAX_Q = 0.05, 7.0
 
 norm_ok = True
@@ -165,7 +165,7 @@ else:
 # ── FHE run ───────────────────────────────────────────────────────────────────
 import time
 
-poly_deg = 7
+poly_deg = 3
 print(f"  Config: size={size}, k={k}, iters={fhe_iters}, poly_degree={poly_deg}, GS=False")
 
 ct_At = matrix.transpose(cipher_a_svd, size, cryptocontext, key_pair.publicKey)
