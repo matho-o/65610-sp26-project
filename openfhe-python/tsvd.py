@@ -1,9 +1,9 @@
 from openfhe import *
-from matrix import matrix_multiply, transpose, repack
+from matrix import matrix_multiply, transpose, repack, expand
 from subspace_iteration import subspace_iteration_fhe
 import random
 
-def truncated_svd(A:Ciphertext, n:int, k:int, cc:CryptoContext, pk:PublicKey, alpha:float=0.01, iters:int=4):
+def truncated_svd(A:Ciphertext, n:int, k:int, cc:CryptoContext, pk:PublicKey, alpha:float=0.01, iters:int=5):
     """
     Halko randomized algorithm for TSVD
     A is an n by n matrix to find the first k SVDs of
@@ -62,7 +62,15 @@ def truncated_svd(A:Ciphertext, n:int, k:int, cc:CryptoContext, pk:PublicKey, al
     print("begin bootstrapping, level", B.GetLevel())
     B = cc.EvalBootstrap(B)
     print("bootstrapped to level", B.GetLevel())
-    B_T = transpose(B, n, cc, pk)
+    B_T = transpose(B, k, cc, pk)
 
     # compute standard SVD of projection B
-    return subspace_iteration_fhe(cc, pk, B, B_T, k, k)
+    U_small, s_small, V_small = subspace_iteration_fhe(cc, pk, B, B_T, k, k)
+
+    # expand small matrix of left singular vectors back to a zero-padded n by n ciphertext
+    U_fin = []
+    for ct_u in U_small:
+        U_exp = expand(ct_u, k, n, cc, pk)
+        U_fin += [matrix_multiply(Q, U_exp, n, cc, pk),]
+
+    return U_fin
