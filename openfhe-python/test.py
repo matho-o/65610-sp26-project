@@ -26,7 +26,7 @@ level_budget = [4, 4]
 #levels_available_after_bootstrap = 3
 #depth = levels_available_after_bootstrap + FHECKKSRNS.GetBootstrapDepth(level_budget, secret_key_dist)
 
-parameters.SetMultiplicativeDepth(60)
+parameters.SetMultiplicativeDepth(130)
 
 cryptocontext = GenCryptoContext(parameters)
 cryptocontext.Enable(PKESchemeFeature.PKE)
@@ -53,7 +53,7 @@ print(f"Rotation keys generated for: {rot_indices}")
 # --- FULL TEST SUITE ---
 
 # 1. Prepare Test Data
-size = 16
+size = 4
 matrix_a_data = [random.random() for i in range(size*size)]
 matrix_b_data = [random.random() for i in range(size*size)]
 
@@ -82,7 +82,7 @@ try:
     print(f"Actual:   {actual_mult}")
 
     if np.allclose(actual_mult, expected_mult, atol=0.001):
-        print("✅ Multiplication Success!")
+        print(" Multiplication Success!")
 except Exception as e:
     print(f"Multiplication test failed: {e}")
 
@@ -102,7 +102,7 @@ try:
     print(f"Actual:   {actual_trans}")
 
     if np.allclose(actual_trans, expected_trans, atol=0.001):
-        print("✅ Transpose Success!")
+        print(" Transpose Success!")
 except Exception as e:
     print(f"Transpose test failed: {e}")
 
@@ -155,16 +155,18 @@ try:
     print("|<v_pt,v_ref>|:", abs(np.dot(v_pt, v_ref)))
 
     X_MIN_Z, X_MAX_Z = 0.01, 2.0
-    X_MIN_V, X_MAX_V = 0.01, 5.0
+    X_MIN_V, X_MAX_V = 0.01, 7.0
 
     start = perf_counter()
 
-    ct_u, ct_s, ct_v = poweriter.power_iteration_fhe(
+    rank_k = 4
+
+    ct_U_list, ct_S_list, ct_V_list, ct_A_deflated = poweriter.rank_k_svd_fhe(
         cryptocontext,
         key_pair.publicKey,
         cipher_a_svd,
-        ct_At,
         n=size,
+        k=rank_k,
         num_iterations=fhe_iters,
         poly_degree=poly_deg,
         x_min_z=X_MIN_Z,
@@ -213,3 +215,109 @@ try:
 
 except Exception as e:
     print(f"Power iteration test failed: {e}")
+
+
+# 7. power iteration test: rank-k SVD
+print("\n--- Step 4: Testing rank-k SVD by deflation ---")
+try:
+    rank_k = 4
+    fhe_iters = 3
+    poly_deg = 3
+
+    # Normalize A for  stability
+    A_np = np.array(matrix_a_data).reshape(size, size)
+    A_normalized = A_np / np.linalg.norm(A_np, "fro")
+
+    cipher_a_svd = cryptocontext.Encrypt(
+        key_pair.publicKey,
+        cryptocontext.MakeCKKSPackedPlaintext(
+            A_normalized.flatten().tolist() * (num_slots // (size * size))
+        ),
+    )
+
+    U_ref, s_ref, Vt_ref = np.linalg.svd(A_normalized, full_matrices=False)
+
+    # Plaintext  ref
+    A_work_plain = A_normalized.copy()
+    U_pt_list, S_pt_list, V_pt_list = [], [], []
+
+    for i in range(rank_k):
+        u_pt, sigma_pt, v_pt = poweriter.power_iteration_plaintext(
+            A_work_plain,
+            num_iterations=fhe_iters,
+            seed=42 + i,
+        )
+
+        U_pt_list.append(u_pt)
+        S_pt_list.append(sigma_pt)
+        V_pt_list.append(v_pt)
+
+        A_work_plain = A_work_plain - sigma_pt * np.outer(u_pt, v_pt)
+
+    print("\nPlaintext deflation reference:")
+    for i in range(rank_k):
+        print(f"component {i}")
+        print(f"  sigma_pt : {S_pt_list[i]:.6f}")
+        print(f"  sigma_ref: {s_ref[i]:.6f}")
+        print(f"  |<u_pt,u_ref>|: {abs(np.dot(U_pt_list[i], U_ref[:, i])):.6f}")
+        print(f"  |<v_pt,v_ref>|: {abs(np.dot(V_pt_list[i], Vt_ref[i, :])):.6f}")
+
+    X_MIN_Z, X_MAX_Z = 0.01, 2.0
+    X_MIN_V, X_MAX_V = 0.01, 7.0
+
+    start = perf_counter()
+
+    ct_U_list, ct_S_list, ct_V_list, ct_A_deflated = poweriter.rank_k_svd_fhe(
+        cryptocontext,
+        key_pair.publicKey,
+        cipher_a_svd,
+        n=size,
+        k=rank_k,
+        num_iterations=fhe_iters,
+        poly_degree=poly_deg,
+        x_min_z=X_MIN_Z,
+        x_max_z=X_MAX_Z,
+        x_min_v=X_MIN_V,
+        x_max_v=X_MAX_V,
+        seed=42,
+    )
+
+    elapsed = perf_counter() - start
+
+    print(f"\nFHE deflation complete in {elapsed:.2f}s\n")
+
+    for i in range(rank_k):
+        dec_u = cryptocontext.Decrypt(ct_U_list[i], key_pair.secretKey)
+        dec_u.SetLength(size * size)
+
+        u_fhe = poweriter.extract_vector_from_repeated_columns(
+            dec_u.GetRealPackedValue(),
+            size,
+        )
+        u_fhe = u_fhe / np.linalg.norm(u_fhe)
+
+        dec_v = cryptocontext.Decrypt(ct_V_list[i], key_pair.secretKey)
+        dec_v.SetLength(size * size)
+
+        v_fhe = poweriter.extract_vector_from_repeated_columns(
+            dec_v.GetRealPackedValue(),
+            size,
+        )
+        v_fhe = v_fhe / np.linalg.norm(v_fhe)
+
+        dec_s = cryptocontext.Decrypt(ct_S_list[i], key_pair.secretKey)
+        dec_s.SetLength(1)
+        sigma_fhe = dec_s.GetRealPackedValue()[0]
+
+        print(f"Component {i}:")
+        print(f"  sigma_fhe: {sigma_fhe:.6f}")
+        print(f"  sigma_pt : {S_pt_list[i]:.6f}")
+        print(f"  sigma_ref: {s_ref[i]:.6f}")
+        print(f"  |<u_fhe,u_ref>|: {abs(np.dot(u_fhe, U_ref[:, i])):.6f}")
+        print(f"  |<v_fhe,v_ref>|: {abs(np.dot(v_fhe, Vt_ref[i, :])):.6f}")
+        print(f"  |<u_fhe,u_pt>| : {abs(np.dot(u_fhe, U_pt_list[i])):.6f}")
+        print(f"  |<v_fhe,v_pt>| : {abs(np.dot(v_fhe, V_pt_list[i])):.6f}")
+        print()
+
+except Exception as e:
+    print(f"Deflation SVD test failed: {e}")

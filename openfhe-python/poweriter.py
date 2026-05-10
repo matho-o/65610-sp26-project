@@ -23,7 +23,7 @@ def power_iteration_plaintext(A, num_iterations=1, seed=42):
 
     return u, sigma, v
 
-# delete 3 funcs later after merging delete and import from subspace_iterations
+
 def poly_invsqrt_coeffs(degree, x_min, x_max):
     nodes = np.cos(
         np.pi * (2 * np.arange(1, degree + 2) - 1) / (2 * (degree + 1))
@@ -64,7 +64,7 @@ def fhe_inv_sqrt_from_norm_sq(
     ct_norm_sq,
     poly_degree=3,
     x_min=0.01,
-    x_max=5.0,
+    x_max=9.0,
 ):
     slot_size = cc.GetRingDimension() // 2
     coeffs = poly_invsqrt_coeffs(poly_degree, x_min, x_max)
@@ -94,7 +94,7 @@ def fhe_normalize_repeated_columns(
     n,
     poly_degree=3,
     x_min=0.01,
-    x_max=5.0,
+    x_max=9.0,
 ):
     ct_norm_sq = fhe_norm_sq_repeated_columns(cc, ct_v_mat, n)
 
@@ -129,9 +129,9 @@ def power_iteration_fhe(
     num_iterations=1,
     poly_degree=3,
     x_min_z=0.01,
-    x_max_z=5.0,
+    x_max_z=9.0,
     x_min_v=0.01,
-    x_max_v=5.0,
+    x_max_v=9.0,
     seed=42,
 ):
     """
@@ -192,13 +192,12 @@ def power_iteration_fhe(
         )
         print(f"    after normalize v, level: {ct_v.GetLevel()}")
 
-    # Av
+
     ct_Av = encrypted_matvec_repeated_columns(
         ct_A, ct_v, n, cc, pub_key
     )
     print(f"    final after A@v, level: {ct_Av.GetLevel()}")
 
-    # u = Av / ||Av||
     ct_u = fhe_normalize_repeated_columns(
         cc,
         pub_key,
@@ -210,8 +209,7 @@ def power_iteration_fhe(
     )
     print(f"    final u level: {ct_u.GetLevel()}")
 
-    # sigma = u^T Av
-    # This avoids computing sqrt(||Av||^2), which was inaccurate.
+
     ct_sigma = fhe_inner_product_repeated_columns(
         cc,
         ct_u,
@@ -226,9 +224,161 @@ def power_iteration_fhe(
 def estimate_power_iteration_depth(num_iterations=1, poly_degree=3):
     matmul_depth = 2
     norm_depth = poly_degree + 2
-    dot_depth = 2  # multiply + scalar divide/mask-ish
-
+    dot_depth = 2
     per_iter = 2 * matmul_depth + 2 * norm_depth
     final_step = matmul_depth + norm_depth + dot_depth
 
     return num_iterations * per_iter + final_step
+
+
+def make_plain_one(cc):
+    slot_size = cc.GetRingDimension() // 2
+    return cc.MakeCKKSPackedPlaintext([1.0] * slot_size)
+
+
+def raise_to_level(cc, ct, target_level):
+    """
+    Increase ct.GetLevel() until it matches target_level by multiplying by 1.
+    """
+    pt_one = make_plain_one(cc)
+
+    while ct.GetLevel() < target_level:
+        ct = cc.EvalMult(ct, pt_one)
+
+    return ct
+
+
+def match_levels(cc, ct_a, ct_b):
+    """
+    Make two ciphertexts have the same level.
+    """
+    la = ct_a.GetLevel()
+    lb = ct_b.GetLevel()
+
+    if la < lb:
+        ct_a = raise_to_level(cc, ct_a, lb)
+    elif lb < la:
+        ct_b = raise_to_level(cc, ct_b, la)
+
+    return ct_a, ct_b
+
+
+def encrypted_outer_product_from_repeated_columns(cc, pub_key, ct_u, ct_v, n):
+    """
+    ct_u stores u as repeated columns:
+        slot(i,j) = u_i
+
+    ct_v stores v as repeated columns:
+        slot(i,j) = v_i
+
+    To form u v^T, we need:
+        slot(i,j) = u_i v_j
+
+    So transpose ct_v to get repeated rows:
+        slot(i,j) = v_j
+
+    Then multiply slotwise.
+    """
+    ct_v_rows = matrix.transpose(ct_v, n, cc, pub_key)
+
+    ct_u, ct_v_rows = match_levels(cc, ct_u, ct_v_rows)
+
+    return cc.EvalMult(ct_u, ct_v_rows)
+
+
+def deflate_encrypted_matrix(cc, pub_key, ct_A, ct_u, ct_sigma, ct_v, n):
+    """
+    Deflate:
+        A <- A - sigma * u v^T
+
+    All encrypted.
+    """
+    ct_outer = encrypted_outer_product_from_repeated_columns(
+        cc,
+        pub_key,
+        ct_u,
+        ct_v,
+        n,
+    )
+
+    ct_outer, ct_sigma = match_levels(cc, ct_outer, ct_sigma)
+
+    ct_rank1 = cc.EvalMult(ct_outer, ct_sigma)
+
+    ct_A, ct_rank1 = match_levels(cc, ct_A, ct_rank1)
+
+    ct_A_new = cc.EvalSub(ct_A, ct_rank1)
+
+    return ct_A_new
+
+
+def rank_k_svd_fhe(
+    cc,
+    pub_key,
+    ct_A,
+    n,
+    k=2,
+    num_iterations=1,
+    poly_degree=3,
+    x_min_z=0.01,
+    x_max_z=5.0,
+    x_min_v=0.01,
+    x_max_v=5.0,
+    seed=42,
+):
+    """
+    Encrypted rank-k SVD using repeated rank-1 power iteration + deflation.
+
+    For i = 1..k:
+        compute sigma_i, u_i, v_i
+        A <- A - sigma_i u_i v_i^T
+
+    Returns:
+        ct_U_list: list of encrypted u_i
+        ct_S_list: list of encrypted sigma_i
+        ct_V_list: list of encrypted v_i
+        ct_A_work: final deflated encrypted matrix
+    """
+    ct_A_work = ct_A
+
+    ct_U_list = []
+    ct_S_list = []
+    ct_V_list = []
+
+    for i in range(k):
+        print(f"\n========== rank component {i + 1}/{k} ==========")
+
+        ct_At_work = matrix.transpose(ct_A_work, n, cc, pub_key)
+
+        ct_u, ct_sigma, ct_v = power_iteration_fhe(
+            cc,
+            pub_key,
+            ct_A_work,
+            ct_At_work,
+            n=n,
+            num_iterations=num_iterations,
+            poly_degree=poly_degree,
+            x_min_z=x_min_z,
+            x_max_z=x_max_z,
+            x_min_v=x_min_v,
+            x_max_v=x_max_v,
+            seed=seed + i,
+        )
+
+        ct_U_list.append(ct_u)
+        ct_S_list.append(ct_sigma)
+        ct_V_list.append(ct_v)
+
+        print(f"  deflating A by component {i + 1}")
+        ct_A_work = deflate_encrypted_matrix(
+            cc,
+            pub_key,
+            ct_A_work,
+            ct_u,
+            ct_sigma,
+            ct_v,
+            n,
+        )
+        print(f"  after deflation, A level: {ct_A_work.GetLevel()}")
+
+    return ct_U_list, ct_S_list, ct_V_list, ct_A_work
